@@ -1,4 +1,3 @@
-import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
@@ -16,7 +15,6 @@ class TetrisScreen extends StatefulWidget {
 class _TetrisScreenState extends State<TetrisScreen> {
   final TetrisGame _game = TetrisGame();
   late final HandTrackingController _handTracking;
-  Timer? _gameTimer;
   bool _cameraActive = false;
   bool _cameraBusy = false;
   bool _isPinching = false;
@@ -30,19 +28,6 @@ class _TetrisScreenState extends State<TetrisScreen> {
       onPose: _handleHandPose,
       onStatus: (status) {
         if (mounted) setState(() => _cameraStatus = status);
-      },
-    );
-    _startGameTimer();
-  }
-
-  void _startGameTimer() {
-    _gameTimer?.cancel();
-    _gameTimer = Timer.periodic(
-      Duration(milliseconds: math.max(110, 620 - _game.lines * 22)),
-      (_) {
-        if (!_game.isPaused && !_game.isGameOver) {
-          setState(_game.tick);
-        }
       },
     );
   }
@@ -73,7 +58,6 @@ class _TetrisScreenState extends State<TetrisScreen> {
       _game.hardDrop();
       _isPinching = false;
       _rotationAnchorY = null;
-      _startGameTimer();
     }
     setState(() {});
   }
@@ -125,12 +109,10 @@ class _TetrisScreenState extends State<TetrisScreen> {
 
   void _restart() {
     setState(_game.reset);
-    _startGameTimer();
   }
 
   @override
   void dispose() {
-    _gameTimer?.cancel();
     _handTracking.dispose();
     super.dispose();
   }
@@ -157,7 +139,7 @@ class _TetrisScreenState extends State<TetrisScreen> {
             const Padding(
               padding: EdgeInsets.fromLTRB(12, 0, 12, 8),
               child: Text(
-                'PINÇA: MOVER  ·  SUBA A MÃO: GIRAR  ·  SOLTE: LANÇAR',
+                'PEÇA PARADA  ·  FECHE A PINÇA: POSICIONAR  ·  SUBA A MÃO: GIRAR  ·  ABRA A PINÇA: LANÇAR',
                 textAlign: TextAlign.center,
                 style: TextStyle(
                   color: Color(0xFFB5A7D6),

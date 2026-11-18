@@ -79,8 +79,8 @@ class _WebHandTrackingController implements HandTrackingController {
     );
     _onStatus(
       pinching
-          ? 'Pinça detectada · mova para posicionar'
-          : 'Mão detectada · faça pinça',
+          ? 'Pinça fechada · mova para posicionar'
+          : 'Pinça aberta · peça parada; feche para mover',
     );
   }
 
