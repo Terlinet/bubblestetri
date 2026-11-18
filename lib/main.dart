@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
 import 'tetris_screen.dart';
@@ -49,7 +50,22 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen>
     with SingleTickerProviderStateMixin {
+  static const _clips = [
+    'assets/videos/TerlineT_Video_1795029283383.webm',
+    'assets/videos/TerlineT_Video_1795029442732.webm',
+    'assets/videos/TerlineT_Video_1795029610645.webm',
+    'assets/videos/TerlineT_Video_1795029727439.webm',
+  ];
+  static const _clipLinks = [
+    'https://terlinet.github.io/terlinetscreen/',
+    'https://terlinet.github.io/terlinet_it_manager/',
+    'https://terlinet.github.io/counter/',
+    'https://terlinet.github.io/governance/',
+  ];
+
   late final AnimationController _motion;
+  late final List<VideoPlayerController> _clipControllers;
+  final List<bool> _clipErrors = List<bool>.filled(_clips.length, false);
   VideoPlayerController? _video;
   String? _videoError;
   final List<_Bubble> _bubbles = _createBubbles();
@@ -61,7 +77,33 @@ class _HomeScreenState extends State<HomeScreen>
       vsync: this,
       duration: const Duration(seconds: 18),
     )..repeat();
+    _clipControllers = _clips
+        .map((asset) => VideoPlayerController.asset(asset))
+        .toList();
     _initializeVideo();
+    for (var index = 0; index < _clipControllers.length; index++) {
+      _initializeClip(index);
+    }
+  }
+
+  Future<void> _initializeClip(int index) async {
+    final controller = _clipControllers[index];
+
+    try {
+      await controller.initialize();
+      await controller.setLooping(true);
+      await controller.setVolume(0);
+      await controller.play();
+      if (mounted) setState(() {});
+    } catch (error, stackTrace) {
+      debugPrint('Could not start clip ${index + 1}: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() {
+          _clipErrors[index] = true;
+        });
+      }
+    }
   }
 
   Future<void> _initializeVideo() async {
@@ -88,16 +130,68 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _openPumpProfile() async {
+    final uri = Uri.parse('https://pump.fun/profile/bubbleschain?share');
+    final opened = await launchUrl(uri, mode: LaunchMode.externalApplication);
+    if (!opened && mounted) {
+      ScaffoldMessenger.of(context)
+        ..hideCurrentSnackBar()
+        ..showSnackBar(
+          const SnackBar(
+            content: Text('Não foi possível abrir o perfil no Pump.fun.'),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+    }
+  }
+
+  Future<void> _openClipLink(int index) async {
+    try {
+      final opened = await launchUrl(Uri.parse(_clipLinks[index]));
+      if (!opened && mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Não foi possível abrir o site deste vídeo.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Could not open site for clip ${index + 1}: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Não foi possível abrir o site deste vídeo.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+      }
+    }
+  }
+
   @override
   void dispose() {
     _motion.dispose();
     _video?.dispose();
+    for (final controller in _clipControllers) {
+      controller.dispose();
+    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final video = _video;
+    final screenSize = MediaQuery.sizeOf(context);
+    final clipSidebarWidth = math
+        .min(screenSize.width * 0.4, screenSize.height * 0.465)
+        .clamp(120.0, 440.0)
+        .toDouble();
 
     return Scaffold(
       body: Stack(
@@ -132,23 +226,108 @@ class _HomeScreenState extends State<HomeScreen>
             painter: _NeonOrbitPainter(motion: _motion, bubbles: _bubbles),
             child: const SizedBox.expand(),
           ),
-          Center(child: _buildTitle()),
           SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-              child: Column(
-                children: [
-                  _buildTopHud(),
-                  const Spacer(),
-                  _buildMenuButtons(),
-                  const SizedBox(height: 22),
-                  _buildBottomHud(),
-                ],
+            child: Row(
+              children: [
+                _buildClipSidebar(clipSidebarWidth),
+                Expanded(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 24,
+                      vertical: 18,
+                    ),
+                    child: Column(
+                      children: [
+                        _buildTopHud(),
+                        const Spacer(),
+                        _buildMenuButtons(),
+                        const SizedBox(height: 22),
+                        _buildBottomHud(),
+                      ],
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Positioned.fill(
+            left: clipSidebarWidth,
+            child: Center(child: _buildTitle()),
+          ),
+          Positioned(
+            top: 12,
+            right: 12,
+            child: SafeArea(
+              child: Semantics(
+                button: true,
+                label: 'Abrir perfil BubblesChain no Pump.fun',
+                child: Tooltip(
+                  message: 'Abrir perfil no Pump.fun',
+                  child: Material(
+                    color: Colors.transparent,
+                    shape: const CircleBorder(),
+                    child: InkWell(
+                      customBorder: const CircleBorder(),
+                      onTap: _openPumpProfile,
+                      child: Container(
+                        width: 58,
+                        height: 58,
+                        decoration: BoxDecoration(
+                          shape: BoxShape.circle,
+                          gradient: const RadialGradient(
+                            center: Alignment(-0.35, -0.45),
+                            radius: 0.95,
+                            colors: [
+                              Color(0xFFFFFFFF),
+                              Color(0xCC00F5FF),
+                              Color(0xCC743DFF),
+                              Color(0xCCFF2BD6),
+                            ],
+                            stops: [0, 0.18, 0.58, 1],
+                          ),
+                          border: Border.all(
+                            color: const Color(0xCCB9FFFF),
+                            width: 1.2,
+                          ),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFF00F5FF)
+                                  .withValues(alpha: 0.48),
+                              blurRadius: 18,
+                              spreadRadius: 1,
+                            ),
+                          ],
+                        ),
+                        child: const Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(
+                              Icons.currency_exchange_rounded,
+                              size: 20,
+                              color: Color(0xFF080512),
+                            ),
+                            SizedBox(height: 2),
+                            Text(
+                              'PUMP',
+                              style: TextStyle(
+                                color: Color(0xFF080512),
+                                fontFamily: 'monospace',
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                                letterSpacing: 0.8,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
               ),
             ),
           ),
           Positioned(
-            left: 16,
+            left: clipSidebarWidth + 16,
             bottom: 52,
             child: SafeArea(
               child: Image.asset(
@@ -160,6 +339,54 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildClipSidebar(double width) {
+    return SizedBox(
+      width: width,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          for (var index = 0; index < _clips.length; index++)
+            Expanded(
+              child: Semantics(
+                button: true,
+                label: 'Abrir site relacionado ao vídeo ${index + 1}',
+                child: Material(
+                  color: Colors.transparent,
+                  child: InkWell(
+                    onTap: () => _openClipLink(index),
+                    child: _clipErrors[index]
+                        ? const Center(
+                            child: Icon(
+                              Icons.error_outline_rounded,
+                              color: Color(0xFFFF6B86),
+                            ),
+                          )
+                        : _clipControllers[index].value.isInitialized
+                        ? FittedBox(
+                            fit: BoxFit.cover,
+                            child: SizedBox(
+                              width: _clipControllers[index].value.size.width,
+                              height: _clipControllers[index].value.size.height,
+                              child: IgnorePointer(
+                                child: VideoPlayer(_clipControllers[index]),
+                              ),
+                            ),
+                          )
+                        : const Center(
+                            child: CircularProgressIndicator(
+                              strokeWidth: 2,
+                              color: Color(0xFF00F5FF),
+                            ),
+                          ),
+                  ),
+                ),
+              ),
+            ),
         ],
       ),
     );

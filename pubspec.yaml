@@ -9,6 +9,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  url_launcher: ^6.3.3
   video_player: ^2.14.1
   web: ^1.1.2
 
@@ -22,3 +23,7 @@ flutter:
   assets:
     - assets/videos/BubblesChain.mp4
     - assets/videos/pengu-pudgy.gif
+    - assets/videos/TerlineT_Video_1795029283383.webm
+    - assets/videos/TerlineT_Video_1795029442732.webm
+    - assets/videos/TerlineT_Video_1795029610645.webm
+    - assets/videos/TerlineT_Video_1795029727439.webm
