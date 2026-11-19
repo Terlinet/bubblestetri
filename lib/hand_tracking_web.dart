@@ -64,6 +64,7 @@ class _WebHandTrackingController implements HandTrackingController {
     JSNumber x,
     JSNumber y,
     JSBoolean isPinching,
+    JSBoolean isPoking,
     JSBoolean hasHand,
   ) {
     if (_isDisposed) return;
@@ -75,11 +76,18 @@ class _WebHandTrackingController implements HandTrackingController {
 
     final pinching = isPinching.toDart;
     _onPose(
-      HandPose(x: x.toDartDouble, y: y.toDartDouble, isPinching: pinching),
+      HandPose(
+        x: x.toDartDouble,
+        y: y.toDartDouble,
+        isPinching: pinching,
+        isPoking: isPoking.toDart,
+      ),
     );
     _onStatus(
       pinching
           ? 'Pinça fechada · mova para posicionar'
+          : isPoking.toDart
+          ? 'Indicador à frente · clique por gesto'
           : 'Pinça aberta · peça parada; feche para mover',
     );
   }

@@ -1,10 +1,15 @@
+import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_tts/flutter_tts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
 
+import 'coordenar_screen.dart';
+import 'gesture_navigation.dart';
+import 'hand_tracking.dart';
 import 'tetris_screen.dart';
 
 void main() {
@@ -20,8 +25,88 @@ void main() {
   runApp(const TerlineTBubblesChainApp());
 }
 
-class TerlineTBubblesChainApp extends StatelessWidget {
+class TerlineTBubblesChainApp extends StatefulWidget {
   const TerlineTBubblesChainApp({super.key});
+
+  @override
+  State<TerlineTBubblesChainApp> createState() =>
+      _TerlineTBubblesChainAppState();
+}
+
+class _TerlineTBubblesChainAppState extends State<TerlineTBubblesChainApp> {
+  final FlutterTts _voice = FlutterTts();
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_announceGestureNavigation());
+    });
+  }
+
+  Future<void> _announceGestureNavigation() async {
+    try {
+      await _voice.setLanguage('pt-BR');
+    } catch (error, stackTrace) {
+      debugPrint('Could not set Portuguese speech: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    try {
+      await _voice.setSpeechRate(0.78);
+      await _voice.setPitch(1.28);
+    } catch (error, stackTrace) {
+      debugPrint('Could not configure the voice: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    try {
+      final voices = await _voice.getVoices;
+      if (voices is List) {
+        final femaleVoice = voices.cast<dynamic>().firstWhere((voice) {
+          if (voice is! Map) return false;
+          final name = '${voice['name']}'.toLowerCase();
+          final gender = '${voice['gender']}'.toLowerCase();
+          final locale = '${voice['locale']}'.toLowerCase();
+          return locale.startsWith('pt') &&
+              (gender.contains('female') ||
+                  name.contains('female') ||
+                  name.contains('femin') ||
+                  name.contains('francisca') ||
+                  name.contains('camila') ||
+                  name.contains('luciana') ||
+                  name.contains('maria'));
+        }, orElse: () => null);
+        if (femaleVoice is Map) {
+          await _voice.setVoice({
+            'name': femaleVoice['name'],
+            'locale': femaleVoice['locale'],
+          });
+        }
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Could not select a Portuguese female voice: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+
+    try {
+      await _voice.speak(
+        'Olá! Ative os gestos e permita o acesso à câmera. '
+        'Depois você poderá usar o aplicativo sem tocar na tela. '
+        'Aponte o indicador e empurre para clicar, ou feche a pinça '
+        'para clicar, segurar e mover as peças.',
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Could not play the gesture navigation introduction: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
+  }
+
+  @override
+  void dispose() {
+    _voice.stop();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -35,6 +120,10 @@ class TerlineTBubblesChainApp extends StatelessWidget {
           primary: Color(0xFF00F5FF),
           secondary: Color(0xFFFF2BD6),
         ),
+      ),
+      builder: (context, child) => GestureNavigationOverlay(
+        onRepeatIntroduction: _announceGestureNavigation,
+        child: child ?? const SizedBox.shrink(),
       ),
       home: const HomeScreen(),
     );
@@ -64,9 +153,12 @@ class _HomeScreenState extends State<HomeScreen>
   ];
 
   late final AnimationController _motion;
+  final HandTrackingService _handTracking = HandTrackingService.instance;
   VideoPlayerController? _video;
   String? _videoError;
   final List<_Bubble> _bubbles = _createBubbles();
+  bool _cameraBusy = false;
+  bool _cameraActive = false;
 
   @override
   void initState() {
@@ -75,7 +167,45 @@ class _HomeScreenState extends State<HomeScreen>
       vsync: this,
       duration: const Duration(seconds: 18),
     )..repeat();
+    _cameraActive = _handTracking.isActive.value;
+    _handTracking.isActive.addListener(_syncGestureState);
     _initializeVideo();
+  }
+
+  void _syncGestureState() {
+    if (mounted) {
+      setState(() => _cameraActive = _handTracking.isActive.value);
+    }
+  }
+
+  Future<void> _toggleGestures() async {
+    if (_cameraBusy || _handTracking.isBusy) return;
+    setState(() => _cameraBusy = true);
+    try {
+      if (_handTracking.isActive.value) {
+        await _handTracking.stop();
+      } else {
+        await _handTracking.start();
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Could not toggle hand navigation: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      _handTracking.status.value = error is UnsupportedError
+          ? error.message?.toString() ?? 'Gestos disponíveis na versão Web.'
+          : 'Câmera indisponível. Verifique a permissão e tente novamente.';
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            SnackBar(
+              content: Text(_handTracking.status.value),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+      }
+    } finally {
+      if (mounted) setState(() => _cameraBusy = false);
+    }
   }
 
   Future<void> _initializeVideo() async {
@@ -157,6 +287,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _motion.dispose();
+    _handTracking.isActive.removeListener(_syncGestureState);
     _video?.dispose();
     super.dispose();
   }
@@ -433,8 +564,8 @@ class _HomeScreenState extends State<HomeScreen>
           message: 'As opções de aprendizado serão adicionadas em breve.',
         ),
         _buildBubbleButton(
-          label: 'INTERAGIR',
-          semanticLabel: 'Interagir',
+          label: 'COORDENAR',
+          semanticLabel: 'Jogar Coordenar',
           icon: Icons.touch_app_rounded,
           colors: const [
             Color(0xBFFFFFFF),
@@ -442,7 +573,14 @@ class _HomeScreenState extends State<HomeScreen>
             Color(0xCCFF2BD6),
             Color(0xCC743DFF),
           ],
-          message: 'As opções de interação serão adicionadas em breve.',
+          message: 'Abrindo o jogo Coordenar.',
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute<void>(
+                builder: (context) => const CoordenarScreen(),
+              ),
+            );
+          },
         ),
         _buildBubbleButton(
           label: 'LINKS ÚTEIS',
@@ -569,6 +707,8 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildBottomHud() {
+    final repeatIntroduction = GestureNavigationScope.maybeOf(context)
+        ?.onRepeatIntroduction;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -586,17 +726,61 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
         const SizedBox(height: 14),
-        Text(
-          _videoError ?? 'BUBBLES CHAIN  //  SYSTEM ONLINE',
-          style: TextStyle(
-            color: _videoError == null
-                ? const Color(0xFFC1AEE8)
-                : const Color(0xFFFF6B86),
-            fontFamily: 'monospace',
-            fontSize: 10,
-            letterSpacing: 1.7,
-          ),
-          textAlign: TextAlign.center,
+        Row(
+          children: [
+            const Spacer(),
+            Expanded(
+              flex: 4,
+              child: Text(
+                _videoError ?? 'BUBBLES CHAIN  //  SYSTEM ONLINE',
+                style: TextStyle(
+                  color: _videoError == null
+                      ? const Color(0xFFC1AEE8)
+                      : const Color(0xFFFF6B86),
+                  fontFamily: 'monospace',
+                  fontSize: 10,
+                  letterSpacing: 1.7,
+                ),
+                textAlign: TextAlign.center,
+              ),
+            ),
+            Expanded(
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  IconButton(
+                    onPressed: _cameraBusy ? null : _toggleGestures,
+                    tooltip: _cameraActive
+                        ? 'Desativar gestos'
+                        : 'Ativar gestos',
+                    icon: _cameraBusy
+                        ? const SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : Icon(
+                            _cameraActive
+                                ? Icons.front_hand_rounded
+                                : Icons.front_hand_outlined,
+                          ),
+                    color: _cameraActive
+                        ? const Color(0xFF71F79F)
+                        : const Color(0xFFBDEBFF),
+                    visualDensity: VisualDensity.compact,
+                  ),
+                  if (repeatIntroduction != null)
+                    IconButton(
+                      onPressed: repeatIntroduction,
+                      tooltip: 'Ouvir instruções novamente',
+                      icon: const Icon(Icons.volume_up_rounded),
+                      color: const Color(0xFFBDEBFF),
+                      visualDensity: VisualDensity.compact,
+                    ),
+                ],
+              ),
+            ),
+          ],
         ),
       ],
     );

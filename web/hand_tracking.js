@@ -4,6 +4,8 @@
   let frameTimer = null;
   let processingFrame = false;
   let lastPinching = false;
+  let depthBaseline = null;
+  let lastPoking = false;
   let callback = null;
 
   window.bubblesStartHandTracking = async (video, onPose) => {
@@ -44,7 +46,9 @@
         const landmarks = results.multiHandLandmarks?.[0];
         if (!landmarks) {
           lastPinching = false;
-          callback?.(-1, 0, false, false);
+          depthBaseline = null;
+          lastPoking = false;
+          callback?.(-1, 0, false, false, false);
           return;
         }
 
@@ -53,7 +57,17 @@
         const distance = Math.hypot(thumb.x - index.x, thumb.y - index.y);
         const pinching = lastPinching ? distance < 0.085 : distance < 0.065;
         lastPinching = pinching;
-        callback?.(1 - index.x, index.y, pinching, true);
+        const pointing =
+          index.y < landmarks[6].y &&
+          landmarks[12].y > landmarks[10].y &&
+          landmarks[16].y > landmarks[14].y &&
+          landmarks[20].y > landmarks[18].y;
+        if (depthBaseline === null) depthBaseline = index.z;
+        const poking = pointing && depthBaseline - index.z > 0.035;
+        const pokeStarted = poking && !lastPoking;
+        lastPoking = poking;
+        if (!poking) depthBaseline = depthBaseline * 0.97 + index.z * 0.03;
+        callback?.(1 - index.x, index.y, pinching, pokeStarted, true);
       });
 
       frameTimer = window.setInterval(async () => {
@@ -86,6 +100,8 @@
     }
     processingFrame = false;
     lastPinching = false;
+    depthBaseline = null;
+    lastPoking = false;
     callback = null;
   };
 })();

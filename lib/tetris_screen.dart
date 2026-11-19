@@ -14,7 +14,7 @@ class TetrisScreen extends StatefulWidget {
 
 class _TetrisScreenState extends State<TetrisScreen> {
   final TetrisGame _game = TetrisGame();
-  late final HandTrackingController _handTracking;
+  final HandTrackingService _handTracking = HandTrackingService.instance;
   bool _cameraActive = false;
   bool _cameraBusy = false;
   bool _isPinching = false;
@@ -24,12 +24,28 @@ class _TetrisScreenState extends State<TetrisScreen> {
   @override
   void initState() {
     super.initState();
-    _handTracking = createHandTrackingController(
-      onPose: _handleHandPose,
-      onStatus: (status) {
-        if (mounted) setState(() => _cameraStatus = status);
-      },
-    );
+    _cameraActive = _handTracking.isActive.value;
+    _cameraStatus = _handTracking.status.value;
+    _handTracking.pose.addListener(_syncHandPose);
+    _handTracking.status.addListener(_syncCameraStatus);
+    _handTracking.isActive.addListener(_syncCameraState);
+  }
+
+  void _syncHandPose() => _handleHandPose(_handTracking.pose.value);
+
+  void _syncCameraStatus() {
+    if (mounted) setState(() => _cameraStatus = _handTracking.status.value);
+  }
+
+  void _syncCameraState() {
+    if (!mounted) return;
+    setState(() {
+      _cameraActive = _handTracking.isActive.value;
+      if (!_cameraActive) {
+        _isPinching = false;
+        _rotationAnchorY = null;
+      }
+    });
   }
 
   void _handleHandPose(HandPose? pose) {
@@ -63,26 +79,17 @@ class _TetrisScreenState extends State<TetrisScreen> {
   }
 
   Future<void> _toggleCamera() async {
-    if (_cameraBusy) return;
+    if (_cameraBusy || _handTracking.isBusy) return;
     setState(() => _cameraBusy = true);
     try {
-      if (_cameraActive) {
+      if (_handTracking.isActive.value) {
         await _handTracking.stop();
-        if (!mounted) return;
-        setState(() {
-          _cameraActive = false;
-          _isPinching = false;
-          _cameraStatus = 'Câmera desligada';
-        });
       } else {
         await _handTracking.start();
-        if (!mounted) return;
-        setState(() => _cameraActive = true);
       }
     } catch (error, stackTrace) {
       debugPrint('Could not start hand tracking: $error');
       debugPrintStack(stackTrace: stackTrace);
-      await _handTracking.stop();
       if (mounted) {
         setState(() {
           _cameraActive = false;
@@ -91,6 +98,7 @@ class _TetrisScreenState extends State<TetrisScreen> {
                     'Rastreamento disponível na versão Web.'
               : 'Câmera indisponível. Verifique a permissão e tente novamente.';
         });
+        _handTracking.status.value = _cameraStatus;
       }
     } finally {
       if (mounted) setState(() => _cameraBusy = false);
@@ -113,7 +121,9 @@ class _TetrisScreenState extends State<TetrisScreen> {
 
   @override
   void dispose() {
-    _handTracking.dispose();
+    _handTracking.pose.removeListener(_syncHandPose);
+    _handTracking.status.removeListener(_syncCameraStatus);
+    _handTracking.isActive.removeListener(_syncCameraState);
     super.dispose();
   }
 
@@ -349,17 +359,7 @@ class _TetrisScreenState extends State<TetrisScreen> {
               height: 68,
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(9),
-                child: _cameraActive
-                    ? _handTracking.buildPreview()
-                    : const ColoredBox(
-                        color: Color(0xFF120B24),
-                        child: Center(
-                          child: Icon(
-                            Icons.videocam_outlined,
-                            color: Color(0xFF00F5FF),
-                          ),
-                        ),
-                      ),
+                child: _buildCameraPreview(),
               ),
             ),
             const SizedBox(width: 10),
@@ -380,18 +380,7 @@ class _TetrisScreenState extends State<TetrisScreen> {
             height: 138,
             child: ClipRRect(
               borderRadius: BorderRadius.circular(10),
-              child: _cameraActive
-                  ? _handTracking.buildPreview()
-                  : const ColoredBox(
-                      color: Color(0xFF120B24),
-                      child: Center(
-                        child: Icon(
-                          Icons.videocam_outlined,
-                          size: 32,
-                          color: Color(0xFF00F5FF),
-                        ),
-                      ),
-                    ),
+              child: _buildCameraPreview(),
             ),
           ),
           const SizedBox(height: 10),
@@ -399,6 +388,19 @@ class _TetrisScreenState extends State<TetrisScreen> {
           const SizedBox(height: 8),
           SizedBox(width: double.infinity, child: _buildCameraButton()),
         ],
+      ),
+    );
+  }
+
+  Widget _buildCameraPreview() {
+    return ColoredBox(
+      color: const Color(0xFF120B24),
+      child: Center(
+        child: Icon(
+          _cameraActive ? Icons.front_hand_rounded : Icons.videocam_outlined,
+          size: 32,
+          color: const Color(0xFF00F5FF),
+        ),
       ),
     );
   }
