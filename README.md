@@ -24,5 +24,5 @@ está disponível somente na versão Web.
 
 - `assets/videos/BubblesChain.mp4`: vídeo de fundo da tela inicial.
 - `assets/videos/pengu-pudgy.gif`: animação da tela inicial.
-- `assets/videos/TerlineT_Video_*.webm`: vídeo clips acessíveis na lateral
-  esquerda da tela inicial.
+- `assets/videos/TerlineT_Video_*.webm`: vídeo clips acessíveis pela bolha
+  “Links Úteis” na tela inicial.

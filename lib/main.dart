@@ -64,8 +64,6 @@ class _HomeScreenState extends State<HomeScreen>
   ];
 
   late final AnimationController _motion;
-  late final List<VideoPlayerController> _clipControllers;
-  final List<bool> _clipErrors = List<bool>.filled(_clips.length, false);
   VideoPlayerController? _video;
   String? _videoError;
   final List<_Bubble> _bubbles = _createBubbles();
@@ -77,33 +75,7 @@ class _HomeScreenState extends State<HomeScreen>
       vsync: this,
       duration: const Duration(seconds: 18),
     )..repeat();
-    _clipControllers = _clips
-        .map((asset) => VideoPlayerController.asset(asset))
-        .toList();
     _initializeVideo();
-    for (var index = 0; index < _clipControllers.length; index++) {
-      _initializeClip(index);
-    }
-  }
-
-  Future<void> _initializeClip(int index) async {
-    final controller = _clipControllers[index];
-
-    try {
-      await controller.initialize();
-      await controller.setLooping(true);
-      await controller.setVolume(0);
-      await controller.play();
-      if (mounted) setState(() {});
-    } catch (error, stackTrace) {
-      debugPrint('Could not start clip ${index + 1}: $error');
-      debugPrintStack(stackTrace: stackTrace);
-      if (mounted) {
-        setState(() {
-          _clipErrors[index] = true;
-        });
-      }
-    }
   }
 
   Future<void> _initializeVideo() async {
@@ -145,6 +117,14 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _openUsefulLinks() {
+    return showDialog<void>(
+      context: context,
+      builder: (context) =>
+          _UsefulLinksDialog(assets: _clips, onOpenLink: _openClipLink),
+    );
+  }
+
   Future<void> _openClipLink(int index) async {
     try {
       final opened = await launchUrl(Uri.parse(_clipLinks[index]));
@@ -178,20 +158,12 @@ class _HomeScreenState extends State<HomeScreen>
   void dispose() {
     _motion.dispose();
     _video?.dispose();
-    for (final controller in _clipControllers) {
-      controller.dispose();
-    }
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
     final video = _video;
-    final screenSize = MediaQuery.sizeOf(context);
-    final clipSidebarWidth = math
-        .min(screenSize.width * 0.4, screenSize.height * 0.465)
-        .clamp(120.0, 440.0)
-        .toDouble();
 
     return Scaffold(
       body: Stack(
@@ -226,33 +198,20 @@ class _HomeScreenState extends State<HomeScreen>
             painter: _NeonOrbitPainter(motion: _motion, bubbles: _bubbles),
             child: const SizedBox.expand(),
           ),
+          Center(child: _buildTitle()),
           SafeArea(
-            child: Row(
-              children: [
-                _buildClipSidebar(clipSidebarWidth),
-                Expanded(
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 24,
-                      vertical: 18,
-                    ),
-                    child: Column(
-                      children: [
-                        _buildTopHud(),
-                        const Spacer(),
-                        _buildMenuButtons(),
-                        const SizedBox(height: 22),
-                        _buildBottomHud(),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
+              child: Column(
+                children: [
+                  _buildTopHud(),
+                  const Spacer(),
+                  _buildMenuButtons(),
+                  const SizedBox(height: 22),
+                  _buildBottomHud(),
+                ],
+              ),
             ),
-          ),
-          Positioned.fill(
-            left: clipSidebarWidth,
-            child: Center(child: _buildTitle()),
           ),
           Positioned(
             top: 12,
@@ -327,7 +286,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
           ),
           Positioned(
-            left: clipSidebarWidth + 16,
+            left: 16,
             bottom: 52,
             child: SafeArea(
               child: Image.asset(
@@ -339,54 +298,6 @@ class _HomeScreenState extends State<HomeScreen>
               ),
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildClipSidebar(double width) {
-    return SizedBox(
-      width: width,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          for (var index = 0; index < _clips.length; index++)
-            Expanded(
-              child: Semantics(
-                button: true,
-                label: 'Abrir site relacionado ao vídeo ${index + 1}',
-                child: Material(
-                  color: Colors.transparent,
-                  child: InkWell(
-                    onTap: () => _openClipLink(index),
-                    child: _clipErrors[index]
-                        ? const Center(
-                            child: Icon(
-                              Icons.error_outline_rounded,
-                              color: Color(0xFFFF6B86),
-                            ),
-                          )
-                        : _clipControllers[index].value.isInitialized
-                        ? FittedBox(
-                            fit: BoxFit.cover,
-                            child: SizedBox(
-                              width: _clipControllers[index].value.size.width,
-                              height: _clipControllers[index].value.size.height,
-                              child: IgnorePointer(
-                                child: VideoPlayer(_clipControllers[index]),
-                              ),
-                            ),
-                          )
-                        : const Center(
-                            child: CircularProgressIndicator(
-                              strokeWidth: 2,
-                              color: Color(0xFF00F5FF),
-                            ),
-                          ),
-                  ),
-                ),
-              ),
-            ),
         ],
       ),
     );
@@ -533,6 +444,19 @@ class _HomeScreenState extends State<HomeScreen>
           ],
           message: 'As opções de interação serão adicionadas em breve.',
         ),
+        _buildBubbleButton(
+          label: 'LINKS ÚTEIS',
+          semanticLabel: 'Abrir links úteis',
+          icon: Icons.link_rounded,
+          colors: const [
+            Color(0xBFFFFFFF),
+            Color(0xCC00F5FF),
+            Color(0xCC743DFF),
+            Color(0xCCFF2BD6),
+          ],
+          message: 'Abrindo links úteis.',
+          onPressed: _openUsefulLinks,
+        ),
       ],
     );
   }
@@ -675,6 +599,163 @@ class _HomeScreenState extends State<HomeScreen>
           textAlign: TextAlign.center,
         ),
       ],
+    );
+  }
+}
+
+class _UsefulLinksDialog extends StatefulWidget {
+  const _UsefulLinksDialog({required this.assets, required this.onOpenLink});
+
+  final List<String> assets;
+  final Future<void> Function(int index) onOpenLink;
+
+  @override
+  State<_UsefulLinksDialog> createState() => _UsefulLinksDialogState();
+}
+
+class _UsefulLinksDialogState extends State<_UsefulLinksDialog> {
+  late final List<VideoPlayerController> _controllers;
+  late final List<bool> _errors;
+
+  @override
+  void initState() {
+    super.initState();
+    _errors = List<bool>.filled(widget.assets.length, false);
+    _controllers = widget.assets
+        .map((asset) => VideoPlayerController.asset(asset))
+        .toList();
+
+    for (var index = 0; index < _controllers.length; index++) {
+      _initializeClip(index);
+    }
+  }
+
+  Future<void> _initializeClip(int index) async {
+    final controller = _controllers[index];
+
+    try {
+      await controller.initialize();
+      await controller.setLooping(true);
+      await controller.setVolume(0);
+      await controller.play();
+      if (mounted) setState(() {});
+    } catch (error, stackTrace) {
+      debugPrint('Could not start useful link clip ${index + 1}: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        setState(() {
+          _errors[index] = true;
+        });
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    for (final controller in _controllers) {
+      controller.dispose();
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final screenSize = MediaQuery.sizeOf(context);
+    final width = math.min(screenSize.width - 32, 900.0);
+    final height = math.min(screenSize.height - 32, 720.0);
+
+    return Dialog(
+      backgroundColor: const Color(0xFF100A20),
+      insetPadding: const EdgeInsets.all(16),
+      shape: RoundedRectangleBorder(
+        side: const BorderSide(color: Color(0x9900F5FF)),
+        borderRadius: BorderRadius.circular(16),
+      ),
+      child: SizedBox(
+        width: width,
+        height: height,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            children: [
+              Row(
+                children: [
+                  const Text(
+                    'LINKS ÚTEIS',
+                    style: TextStyle(
+                      color: Color(0xFF00F5FF),
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 1.4,
+                    ),
+                  ),
+                  const Spacer(),
+                  IconButton(
+                    tooltip: 'Fechar links úteis',
+                    onPressed: () => Navigator.of(context).pop(),
+                    icon: const Icon(Icons.close_rounded),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              Expanded(
+                child: GridView.builder(
+                  itemCount: _controllers.length,
+                  gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
+                    crossAxisCount: 2,
+                    crossAxisSpacing: 12,
+                    mainAxisSpacing: 12,
+                    childAspectRatio: 16 / 9,
+                  ),
+                  itemBuilder: (context, index) {
+                    final controller = _controllers[index];
+
+                    return ClipRRect(
+                      borderRadius: BorderRadius.circular(10),
+                      child: Material(
+                        color: const Color(0xFF080512),
+                        child: InkWell(
+                          onTap: () => widget.onOpenLink(index),
+                          child: Stack(
+                            fit: StackFit.expand,
+                            children: [
+                              if (_errors[index])
+                                const Center(
+                                  child: Icon(
+                                    Icons.error_outline_rounded,
+                                    color: Color(0xFFFF6B86),
+                                  ),
+                                )
+                              else if (controller.value.isInitialized)
+                                FittedBox(
+                                  fit: BoxFit.cover,
+                                  child: SizedBox(
+                                    width: controller.value.size.width,
+                                    height: controller.value.size.height,
+                                    child: IgnorePointer(
+                                      child: VideoPlayer(controller),
+                                    ),
+                                  ),
+                                )
+                              else
+                                const Center(
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                    color: Color(0xFF00F5FF),
+                                  ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      ),
+                    );
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
