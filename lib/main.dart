@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_tts/flutter_tts.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:video_player/video_player.dart';
+import 'package:wakelock_plus/wakelock_plus.dart';
 
 import 'coordenar_screen.dart';
 import 'gesture_navigation.dart';
@@ -39,9 +40,32 @@ class _TerlineTBubblesChainAppState extends State<TerlineTBubblesChainApp> {
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(_lifecycleObserver);
+    _setScreenAwake(true);
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mounted) unawaited(_announceGestureNavigation());
     });
+  }
+
+  late final WidgetsBindingObserver _lifecycleObserver = _AppLifecycleObserver(
+    _handleLifecycleChange,
+  );
+
+  void _handleLifecycleChange(AppLifecycleState state) {
+    _setScreenAwake(state == AppLifecycleState.resumed);
+  }
+
+  Future<void> _setScreenAwake(bool awake) async {
+    try {
+      if (awake) {
+        await WakelockPlus.enable();
+      } else {
+        await WakelockPlus.disable();
+      }
+    } catch (error, stackTrace) {
+      debugPrint('Could not update screen wakelock: $error');
+      debugPrintStack(stackTrace: stackTrace);
+    }
   }
 
   Future<void> _announceGestureNavigation() async {
@@ -104,6 +128,8 @@ class _TerlineTBubblesChainAppState extends State<TerlineTBubblesChainApp> {
 
   @override
   void dispose() {
+    WidgetsBinding.instance.removeObserver(_lifecycleObserver);
+    unawaited(_setScreenAwake(false));
     _voice.stop();
     super.dispose();
   }
@@ -121,17 +147,26 @@ class _TerlineTBubblesChainAppState extends State<TerlineTBubblesChainApp> {
           secondary: Color(0xFFFF2BD6),
         ),
       ),
-      builder: (context, child) => GestureNavigationOverlay(
-        onRepeatIntroduction: _announceGestureNavigation,
-        child: child ?? const SizedBox.shrink(),
-      ),
-      home: const HomeScreen(),
+      home: HomeScreen(onRepeatIntroduction: _announceGestureNavigation),
     );
   }
 }
 
+class _AppLifecycleObserver extends WidgetsBindingObserver {
+  _AppLifecycleObserver(this.onStateChanged);
+
+  final ValueChanged<AppLifecycleState> onStateChanged;
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    onStateChanged(state);
+  }
+}
+
 class HomeScreen extends StatefulWidget {
-  const HomeScreen({super.key});
+  const HomeScreen({required this.onRepeatIntroduction, super.key});
+
+  final Future<void> Function() onRepeatIntroduction;
 
   @override
   State<HomeScreen> createState() => _HomeScreenState();
@@ -205,6 +240,30 @@ class _HomeScreenState extends State<HomeScreen>
       }
     } finally {
       if (mounted) setState(() => _cameraBusy = false);
+    }
+  }
+
+  Future<void> _openGame(Widget game) async {
+    try {
+      if (_handTracking.isActive.value) {
+        await _handTracking.stop();
+      }
+      if (!mounted) return;
+      await Navigator.of(context)
+          .push(MaterialPageRoute<void>(builder: (context) => game));
+    } catch (error, stackTrace) {
+      debugPrint('Could not open game screen: $error');
+      debugPrintStack(stackTrace: stackTrace);
+      if (mounted) {
+        ScaffoldMessenger.of(context)
+          ..hideCurrentSnackBar()
+          ..showSnackBar(
+            const SnackBar(
+              content: Text('Não foi possível abrir o jogo. Tente novamente.'),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+      }
     }
   }
 
@@ -296,118 +355,124 @@ class _HomeScreenState extends State<HomeScreen>
   Widget build(BuildContext context) {
     final video = _video;
 
-    return Scaffold(
-      body: Stack(
-        fit: StackFit.expand,
-        children: [
-          const ColoredBox(color: Color(0xFF080512)),
-          if (video != null && video.value.isInitialized)
-            ClipRect(
-              child: FittedBox(
-                fit: BoxFit.cover,
-                child: SizedBox(
-                  width: video.value.size.width,
-                  height: video.value.size.height,
-                  child: VideoPlayer(video),
+    return GestureNavigationOverlay(
+      onRepeatIntroduction: widget.onRepeatIntroduction,
+      child: Scaffold(
+        body: Stack(
+          fit: StackFit.expand,
+          children: [
+            const ColoredBox(color: Color(0xFF080512)),
+            if (video != null && video.value.isInitialized)
+              ClipRect(
+                child: FittedBox(
+                  fit: BoxFit.cover,
+                  child: SizedBox(
+                    width: video.value.size.width,
+                    height: video.value.size.height,
+                    child: VideoPlayer(video),
+                  ),
+                ),
+              ),
+            const DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0xC9080512),
+                    Color(0x80080512),
+                    Color(0xD9080512),
+                  ],
                 ),
               ),
             ),
-          const DecoratedBox(
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                begin: Alignment.topCenter,
-                end: Alignment.bottomCenter,
-                colors: [
-                  Color(0xC9080512),
-                  Color(0x80080512),
-                  Color(0xD9080512),
-                ],
+            CustomPaint(
+              painter: _NeonOrbitPainter(motion: _motion, bubbles: _bubbles),
+              child: const SizedBox.expand(),
+            ),
+            Center(child: _buildTitle()),
+            SafeArea(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 24,
+                  vertical: 18,
+                ),
+                child: Column(
+                  children: [
+                    _buildTopHud(),
+                    const Spacer(),
+                    _buildMenuButtons(),
+                    const SizedBox(height: 22),
+                    _buildBottomHud(),
+                  ],
+                ),
               ),
             ),
-          ),
-          CustomPaint(
-            painter: _NeonOrbitPainter(motion: _motion, bubbles: _bubbles),
-            child: const SizedBox.expand(),
-          ),
-          Center(child: _buildTitle()),
-          SafeArea(
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 18),
-              child: Column(
-                children: [
-                  _buildTopHud(),
-                  const Spacer(),
-                  _buildMenuButtons(),
-                  const SizedBox(height: 22),
-                  _buildBottomHud(),
-                ],
-              ),
-            ),
-          ),
-          Positioned(
-            top: 12,
-            right: 12,
-            child: SafeArea(
-              child: Semantics(
-                button: true,
-                label: 'Abrir perfil BubblesChain no Pump.fun',
-                child: Tooltip(
-                  message: 'Abrir perfil no Pump.fun',
-                  child: Material(
-                    color: Colors.transparent,
-                    shape: const CircleBorder(),
-                    child: InkWell(
-                      customBorder: const CircleBorder(),
-                      onTap: _openPumpProfile,
-                      child: Container(
-                        width: 58,
-                        height: 58,
-                        decoration: BoxDecoration(
-                          shape: BoxShape.circle,
-                          gradient: const RadialGradient(
-                            center: Alignment(-0.35, -0.45),
-                            radius: 0.95,
-                            colors: [
-                              Color(0xFFFFFFFF),
-                              Color(0xCC00F5FF),
-                              Color(0xCC743DFF),
-                              Color(0xCCFF2BD6),
-                            ],
-                            stops: [0, 0.18, 0.58, 1],
-                          ),
-                          border: Border.all(
-                            color: const Color(0xCCB9FFFF),
-                            width: 1.2,
-                          ),
-                          boxShadow: [
-                            BoxShadow(
-                              color: const Color(0xFF00F5FF)
-                                  .withValues(alpha: 0.48),
-                              blurRadius: 18,
-                              spreadRadius: 1,
+            Positioned(
+              top: 12,
+              right: 12,
+              child: SafeArea(
+                child: Semantics(
+                  button: true,
+                  label: 'Abrir perfil BubblesChain no Pump.fun',
+                  child: Tooltip(
+                    message: 'Abrir perfil no Pump.fun',
+                    child: Material(
+                      color: Colors.transparent,
+                      shape: const CircleBorder(),
+                      child: InkWell(
+                        customBorder: const CircleBorder(),
+                        onTap: _openPumpProfile,
+                        child: Container(
+                          width: 58,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            gradient: const RadialGradient(
+                              center: Alignment(-0.35, -0.45),
+                              radius: 0.95,
+                              colors: [
+                                Color(0xFFFFFFFF),
+                                Color(0xCC00F5FF),
+                                Color(0xCC743DFF),
+                                Color(0xCCFF2BD6),
+                              ],
+                              stops: [0, 0.18, 0.58, 1],
                             ),
-                          ],
-                        ),
-                        child: const Column(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(
-                              Icons.currency_exchange_rounded,
-                              size: 20,
-                              color: Color(0xFF080512),
+                            border: Border.all(
+                              color: const Color(0xCCB9FFFF),
+                              width: 1.2,
                             ),
-                            SizedBox(height: 2),
-                            Text(
-                              'PUMP',
-                              style: TextStyle(
-                                color: Color(0xFF080512),
-                                fontFamily: 'monospace',
-                                fontSize: 8,
-                                fontWeight: FontWeight.bold,
-                                letterSpacing: 0.8,
+                            boxShadow: [
+                              BoxShadow(
+                                color: const Color(0xFF00F5FF)
+                                    .withValues(alpha: 0.48),
+                                blurRadius: 18,
+                                spreadRadius: 1,
                               ),
-                            ),
-                          ],
+                            ],
+                          ),
+                          child: const Column(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Icon(
+                                Icons.currency_exchange_rounded,
+                                size: 20,
+                                color: Color(0xFF080512),
+                              ),
+                              SizedBox(height: 2),
+                              Text(
+                                'PUMP',
+                                style: TextStyle(
+                                  color: Color(0xFF080512),
+                                  fontFamily: 'monospace',
+                                  fontSize: 8,
+                                  fontWeight: FontWeight.bold,
+                                  letterSpacing: 0.8,
+                                ),
+                              ),
+                            ],
+                          ),
                         ),
                       ),
                     ),
@@ -415,21 +480,21 @@ class _HomeScreenState extends State<HomeScreen>
                 ),
               ),
             ),
-          ),
-          Positioned(
-            left: 16,
-            bottom: 52,
-            child: SafeArea(
-              child: Image.asset(
-                'assets/videos/pengu-pudgy.gif',
-                width: 84,
-                height: 84,
-                fit: BoxFit.contain,
-                semanticLabel: 'Pinguim animado',
+            Positioned(
+              left: 16,
+              bottom: 52,
+              child: SafeArea(
+                child: Image.asset(
+                  'assets/videos/pengu-pudgy.gif',
+                  width: 84,
+                  height: 84,
+                  fit: BoxFit.contain,
+                  semanticLabel: 'Pinguim animado',
+                ),
               ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
@@ -543,13 +608,7 @@ class _HomeScreenState extends State<HomeScreen>
             Color(0xCCFF2BD6),
           ],
           message: 'Abrindo Bubbles Tetris.',
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (context) => const TetrisScreen(),
-              ),
-            );
-          },
+          onPressed: () => _openGame(const TetrisScreen()),
         ),
         _buildBubbleButton(
           label: 'APRENDER',
@@ -574,13 +633,7 @@ class _HomeScreenState extends State<HomeScreen>
             Color(0xCC743DFF),
           ],
           message: 'Abrindo o jogo Coordenar.',
-          onPressed: () {
-            Navigator.of(context).push(
-              MaterialPageRoute<void>(
-                builder: (context) => const CoordenarScreen(),
-              ),
-            );
-          },
+          onPressed: () => _openGame(const CoordenarScreen()),
         ),
         _buildBubbleButton(
           label: 'LINKS ÚTEIS',
@@ -707,8 +760,7 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Widget _buildBottomHud() {
-    final repeatIntroduction = GestureNavigationScope.maybeOf(context)
-        ?.onRepeatIntroduction;
+    final repeatIntroduction = widget.onRepeatIntroduction;
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -769,14 +821,13 @@ class _HomeScreenState extends State<HomeScreen>
                         : const Color(0xFFBDEBFF),
                     visualDensity: VisualDensity.compact,
                   ),
-                  if (repeatIntroduction != null)
-                    IconButton(
-                      onPressed: repeatIntroduction,
-                      tooltip: 'Ouvir instruções novamente',
-                      icon: const Icon(Icons.volume_up_rounded),
-                      color: const Color(0xFFBDEBFF),
-                      visualDensity: VisualDensity.compact,
-                    ),
+                  IconButton(
+                    onPressed: repeatIntroduction,
+                    tooltip: 'Ouvir instruções novamente',
+                    icon: const Icon(Icons.volume_up_rounded),
+                    color: const Color(0xFFBDEBFF),
+                    visualDensity: VisualDensity.compact,
+                  ),
                 ],
               ),
             ),

@@ -18,17 +18,19 @@ carregado do jsDelivr; portanto, requer conexão com a internet.
 
 Ao abrir o app, uma voz em português apresenta a navegação por gestos. A voz
 feminina é selecionada quando disponível no dispositivo; use o botão de áudio
-para ouvir as instruções novamente. Ative o ícone de mão na tela inicial e
-permita o acesso à câmera: depois disso, aponte e empurre o indicador para
-clicar ou feche a pinça para clicar, segurar e mover. O cursor acompanha a mão
-em todas as telas.
+para ouvir as instruções novamente. Na tela inicial, ative o ícone de mão e
+permita o acesso à câmera; aponte e empurre o indicador para clicar nas bolhas.
+Os gestos de navegação da tela inicial não são enviados para dentro dos jogos.
+A tela permanece ativa enquanto o app estiver em primeiro plano e volta a
+permitir o bloqueio automático quando o app vai para segundo plano.
 
 No Coordenar, feche a pinça sobre uma peça, mova a mão até o espaço apontado
-pela seta e abra a pinça para encaixá-la. Também é possível usar mouse ou toque.
+pela seta e abra a pinça para encaixá-la. Ative a câmera no próprio jogo ou use
+mouse e toque.
 
 No Bubbles Tetris, mantenha a pinça fechada para mover a peça, suba a mão para
 girá-la e abra a pinça para encaixá-la. As peças não descem sozinhas; os
-controles na tela também podem ser usados.
+controles na tela também podem ser usados. Ative a câmera no próprio jogo.
 
 No Android, o jogo funciona com controles de toque; o rastreamento por câmera
 está disponível somente na versão Web.

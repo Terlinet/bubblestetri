@@ -27,7 +27,7 @@ class _CoordenarScreenState extends State<CoordenarScreen> {
   ];
 
   final CoordenarGame _game = CoordenarGame();
-  final HandTrackingService _handTracking = HandTrackingService.instance;
+  late final HandTrackingController _handTracking;
   Size _sceneSize = Size.zero;
   Offset _handPosition = const Offset(-1, -1);
   GeometricShape? _heldPiece;
@@ -42,28 +42,12 @@ class _CoordenarScreenState extends State<CoordenarScreen> {
   @override
   void initState() {
     super.initState();
-    _cameraActive = _handTracking.isActive.value;
-    _cameraStatus = _handTracking.status.value;
-    _handTracking.pose.addListener(_syncHandPose);
-    _handTracking.status.addListener(_syncCameraStatus);
-    _handTracking.isActive.addListener(_syncCameraState);
-  }
-
-  void _syncHandPose() => _handleHandPose(_handTracking.pose.value);
-
-  void _syncCameraStatus() {
-    if (mounted) setState(() => _cameraStatus = _handTracking.status.value);
-  }
-
-  void _syncCameraState() {
-    if (!mounted) return;
-    setState(() {
-      _cameraActive = _handTracking.isActive.value;
-      if (!_cameraActive) {
-        _isPinching = false;
-        _heldPiece = null;
-      }
-    });
+    _handTracking = createHandTrackingController(
+      onPose: _handleHandPose,
+      onStatus: (status) {
+        if (mounted) setState(() => _cameraStatus = status);
+      },
+    );
   }
 
   void _handleHandPose(HandPose? pose) {
@@ -181,13 +165,22 @@ class _CoordenarScreenState extends State<CoordenarScreen> {
   }
 
   Future<void> _toggleCamera() async {
-    if (_cameraBusy || _handTracking.isBusy) return;
+    if (_cameraBusy) return;
     setState(() => _cameraBusy = true);
     try {
-      if (_handTracking.isActive.value) {
+      if (_cameraActive) {
         await _handTracking.stop();
+        if (!mounted) return;
+        setState(() {
+          _cameraActive = false;
+          _isPinching = false;
+          _heldPiece = null;
+          _cameraStatus = 'Câmera desligada.';
+        });
       } else {
         await _handTracking.start();
+        if (!mounted) return;
+        setState(() => _cameraActive = true);
       }
     } catch (error, stackTrace) {
       debugPrint('Could not start hand tracking: $error');
@@ -200,7 +193,6 @@ class _CoordenarScreenState extends State<CoordenarScreen> {
                     'Controle por mãos disponível na versão Web.'
               : 'Câmera indisponível. Verifique a permissão e tente novamente.';
         });
-        _handTracking.status.value = _cameraStatus;
       }
     } finally {
       if (mounted) setState(() => _cameraBusy = false);
@@ -227,9 +219,7 @@ class _CoordenarScreenState extends State<CoordenarScreen> {
 
   @override
   void dispose() {
-    _handTracking.pose.removeListener(_syncHandPose);
-    _handTracking.status.removeListener(_syncCameraStatus);
-    _handTracking.isActive.removeListener(_syncCameraState);
+    _handTracking.dispose();
     super.dispose();
   }
 

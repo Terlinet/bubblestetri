@@ -20,23 +20,6 @@ class GestureNavigationOverlay extends StatefulWidget {
       _GestureNavigationOverlayState();
 }
 
-class GestureNavigationScope extends InheritedWidget {
-  const GestureNavigationScope({
-    required this.onRepeatIntroduction,
-    required super.child,
-    super.key,
-  });
-
-  final Future<void> Function()? onRepeatIntroduction;
-
-  static GestureNavigationScope? maybeOf(BuildContext context) =>
-      context.dependOnInheritedWidgetOfExactType<GestureNavigationScope>();
-
-  @override
-  bool updateShouldNotify(GestureNavigationScope oldWidget) =>
-      oldWidget.onRepeatIntroduction != onRepeatIntroduction;
-}
-
 class _GestureNavigationOverlayState extends State<GestureNavigationOverlay> {
   final HandTrackingService _tracking = HandTrackingService.instance;
   Offset? _cursor;
@@ -61,7 +44,9 @@ class _GestureNavigationOverlayState extends State<GestureNavigationOverlay> {
     final clickStarted = pose.isPoking || (pose.isPinching && !_isPinching);
     _isPinching = pose.isPinching;
     if (mounted) setState(() => _cursor = position);
-    if (clickStarted && _tracking.isActive.value) {
+    if (clickStarted &&
+        _tracking.isActive.value &&
+        ModalRoute.of(context)?.isCurrent == true) {
       _dispatchTap(position);
     }
   }
@@ -93,10 +78,7 @@ class _GestureNavigationOverlayState extends State<GestureNavigationOverlay> {
     return Stack(
       fit: StackFit.expand,
       children: [
-        GestureNavigationScope(
-          onRepeatIntroduction: widget.onRepeatIntroduction,
-          child: widget.child,
-        ),
+        widget.child,
         Positioned(
           left: 0,
           bottom: 0,
