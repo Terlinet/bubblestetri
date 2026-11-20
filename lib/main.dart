@@ -172,8 +172,7 @@ class HomeScreen extends StatefulWidget {
   State<HomeScreen> createState() => _HomeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen>
-    with SingleTickerProviderStateMixin {
+class _HomeScreenState extends State<HomeScreen> with TickerProviderStateMixin {
   static const _clips = [
     'assets/videos/TerlineT_Video_1795029283383.webm',
     'assets/videos/TerlineT_Video_1795029442732.webm',
@@ -188,6 +187,7 @@ class _HomeScreenState extends State<HomeScreen>
   ];
 
   late final AnimationController _motion;
+  late final AnimationController _gesturePulse;
   final HandTrackingService _handTracking = HandTrackingService.instance;
   VideoPlayerController? _video;
   String? _videoError;
@@ -202,7 +202,12 @@ class _HomeScreenState extends State<HomeScreen>
       vsync: this,
       duration: const Duration(seconds: 18),
     )..repeat();
+    _gesturePulse = AnimationController(
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    );
     _cameraActive = _handTracking.isActive.value;
+    if (!_cameraActive) _gesturePulse.repeat(reverse: true);
     _handTracking.isActive.addListener(_syncGestureState);
     _initializeVideo();
   }
@@ -210,12 +215,22 @@ class _HomeScreenState extends State<HomeScreen>
   void _syncGestureState() {
     if (mounted) {
       setState(() => _cameraActive = _handTracking.isActive.value);
+      if (_cameraActive || _cameraBusy) {
+        _gesturePulse
+          ..stop()
+          ..value = 0;
+      } else {
+        _gesturePulse.repeat(reverse: true);
+      }
     }
   }
 
   Future<void> _toggleGestures() async {
     if (_cameraBusy || _handTracking.isBusy) return;
     setState(() => _cameraBusy = true);
+    _gesturePulse
+      ..stop()
+      ..value = 0;
     try {
       if (_handTracking.isActive.value) {
         await _handTracking.stop();
@@ -239,7 +254,10 @@ class _HomeScreenState extends State<HomeScreen>
           );
       }
     } finally {
-      if (mounted) setState(() => _cameraBusy = false);
+      if (mounted) {
+        setState(() => _cameraBusy = false);
+        if (!_cameraActive) _gesturePulse.repeat(reverse: true);
+      }
     }
   }
 
@@ -346,6 +364,7 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   void dispose() {
     _motion.dispose();
+    _gesturePulse.dispose();
     _handTracking.isActive.removeListener(_syncGestureState);
     _video?.dispose();
     super.dispose();
@@ -778,62 +797,114 @@ class _HomeScreenState extends State<HomeScreen>
           ),
         ),
         const SizedBox(height: 14),
+        Text(
+          _videoError ?? 'BUBBLES CHAIN  //  SYSTEM ONLINE',
+          style: TextStyle(
+            color: _videoError == null
+                ? const Color(0xFFC1AEE8)
+                : const Color(0xFFFF6B86),
+            fontFamily: 'monospace',
+            fontSize: 10,
+            letterSpacing: 1.7,
+          ),
+          textAlign: TextAlign.center,
+        ),
         Row(
+          mainAxisAlignment: MainAxisAlignment.end,
           children: [
-            const Spacer(),
-            Expanded(
-              flex: 4,
-              child: Text(
-                _videoError ?? 'BUBBLES CHAIN  //  SYSTEM ONLINE',
-                style: TextStyle(
-                  color: _videoError == null
-                      ? const Color(0xFFC1AEE8)
-                      : const Color(0xFFFF6B86),
-                  fontFamily: 'monospace',
-                  fontSize: 10,
-                  letterSpacing: 1.7,
-                ),
-                textAlign: TextAlign.center,
+            if (!_cameraActive && !_cameraBusy) ...[
+              const Text('👉', style: TextStyle(fontSize: 23)),
+              const SizedBox(width: 4),
+            ],
+            AnimatedBuilder(
+              animation: _gesturePulse,
+              builder: (context, child) => Transform.scale(
+                scale: _cameraActive || _cameraBusy
+                    ? 1
+                    : 1 + _gesturePulse.value * 0.07,
+                child: child,
               ),
+              child: _buildGestureToggle(),
             ),
-            Expanded(
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  IconButton(
-                    onPressed: _cameraBusy ? null : _toggleGestures,
-                    tooltip: _cameraActive
-                        ? 'Desativar gestos'
-                        : 'Ativar gestos',
-                    icon: _cameraBusy
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : Icon(
-                            _cameraActive
-                                ? Icons.front_hand_rounded
-                                : Icons.front_hand_outlined,
-                          ),
-                    color: _cameraActive
-                        ? const Color(0xFF71F79F)
-                        : const Color(0xFFBDEBFF),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                  IconButton(
-                    onPressed: repeatIntroduction,
-                    tooltip: 'Ouvir instruções novamente',
-                    icon: const Icon(Icons.volume_up_rounded),
-                    color: const Color(0xFFBDEBFF),
-                    visualDensity: VisualDensity.compact,
-                  ),
-                ],
-              ),
+            const SizedBox(width: 8),
+            IconButton(
+              onPressed: repeatIntroduction,
+              tooltip: 'Ouvir instruções novamente',
+              icon: const Icon(Icons.volume_up_rounded),
+              color: const Color(0xFFBDEBFF),
+              visualDensity: VisualDensity.compact,
             ),
           ],
         ),
       ],
+    );
+  }
+
+  Widget _buildGestureToggle() {
+    final activeColor = _cameraActive
+        ? const Color(0xFF71F79F)
+        : const Color(0xFFBDEBFF);
+    return Semantics(
+      button: true,
+      label: _cameraActive ? 'Desativar gestos' : 'Ativar gestos',
+      child: Tooltip(
+        message: _cameraActive ? 'Desativar gestos' : 'Ativar gestos',
+        child: Material(
+          color: const Color(0xFF171027),
+          borderRadius: BorderRadius.circular(24),
+          child: InkWell(
+            onTap: _cameraBusy ? null : _toggleGestures,
+            borderRadius: BorderRadius.circular(24),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(24),
+                border: Border.all(color: activeColor.withValues(alpha: 0.85)),
+                boxShadow: [
+                  BoxShadow(
+                    color: activeColor.withValues(
+                      alpha: _cameraActive ? 0.22 : 0.35,
+                    ),
+                    blurRadius: 14,
+                  ),
+                ],
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  if (_cameraBusy)
+                    SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(
+                        strokeWidth: 2,
+                        color: activeColor,
+                      ),
+                    )
+                  else
+                    Icon(
+                      _cameraActive
+                          ? Icons.front_hand_rounded
+                          : Icons.front_hand_outlined,
+                      size: 19,
+                      color: activeColor,
+                    ),
+                  const SizedBox(width: 7),
+                  const Text(
+                    'Gestos',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontFamily: 'monospace',
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.5,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
